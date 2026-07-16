@@ -1,0 +1,11 @@
+/target/
+/.idea/
+/.vscode/
+*.iml
+
+# Local runtime data and licensed databases
+*.mmdb
+IP2PROXY-LITE*.CSV
+botbans.properties
+geowhitelist.properties
+allowed-players.properties
