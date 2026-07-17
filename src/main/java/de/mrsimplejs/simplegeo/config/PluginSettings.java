@@ -23,7 +23,19 @@ record PluginSettings(
     long botbanSyncIntervalSeconds,
     String botbanUnbanSyncUrl,
     String botbanUnbanSyncSecret,
-    long botbanUnbanSyncIntervalSeconds
+    long botbanUnbanSyncIntervalSeconds,
+    Set<String> permissionsAllow,
+    Set<String> permissionsBotAllow,
+    Set<String> permissionsNotify,
+    Set<String> permissionsBypass,
+    Set<String> permissionsAntiBotBypass,
+    Set<String> permissionsAdmin,
+    Set<String> permissionsMod,
+    Set<String> permissionsCadmin,
+    String ansiReset,
+    String ansiRed,
+    String ansiGreen,
+    String ansiYellow
 ) {
     private static final String FILE_NAME = "config.properties";
 
@@ -47,7 +59,19 @@ record PluginSettings(
             Math.max(0, number(properties.getProperty("botban-sync-interval-seconds"), 60)),
             value(properties, "botban-unban-sync-url", ""),
             value(properties, "botban-unban-sync-secret", ""),
-            Math.max(0, number(properties.getProperty("botban-unban-sync-interval-seconds"), 30))
+            Math.max(0, number(properties.getProperty("botban-unban-sync-interval-seconds"), 30)),
+            permissionList(properties, "permission-allow", "simplegeo.allow"),
+            permissionList(properties, "permission-bot-allow", "simplegeo.botallow"),
+            permissionList(properties, "permission-notify", "simplegeo.notify"),
+            permissionList(properties, "permission-bypass", "simplegeo.bypass"),
+            permissionList(properties, "permission-antibot-bypass", "antibot.bypass"),
+            permissionList(properties, "permission-admin", "group.admin"),
+            permissionList(properties, "permission-mod", "group.mod"),
+            permissionList(properties, "permission-cadmin", "group.cadmin"),
+            value(properties, "ansi-reset", "\u001B[0m"),
+            value(properties, "ansi-red", "\u001B[31m"),
+            value(properties, "ansi-green", "\u001B[32m"),
+            value(properties, "ansi-yellow", "\u001B[33m")
         );
         settings.writeNormalized(file, properties, logger);
         return settings;
@@ -69,6 +93,18 @@ record PluginSettings(
         properties.setProperty("botban-unban-sync-url", botbanUnbanSyncUrl);
         properties.setProperty("botban-unban-sync-secret", botbanUnbanSyncSecret);
         properties.setProperty("botban-unban-sync-interval-seconds", String.valueOf(botbanUnbanSyncIntervalSeconds));
+        properties.setProperty("permission-allow", String.join(",", permissionsAllow));
+        properties.setProperty("permission-bot-allow", String.join(",", permissionsBotAllow));
+        properties.setProperty("permission-notify", String.join(",", permissionsNotify));
+        properties.setProperty("permission-bypass", String.join(",", permissionsBypass));
+        properties.setProperty("permission-antibot-bypass", String.join(",", permissionsAntiBotBypass));
+        properties.setProperty("permission-admin", String.join(",", permissionsAdmin));
+        properties.setProperty("permission-mod", String.join(",", permissionsMod));
+        properties.setProperty("permission-cadmin", String.join(",", permissionsCadmin));
+        properties.setProperty("ansi-reset", ansiReset);
+        properties.setProperty("ansi-red", ansiRed);
+        properties.setProperty("ansi-green", ansiGreen);
+        properties.setProperty("ansi-yellow", ansiYellow);
         ConfigFile.save(file, properties, logger);
     }
 
@@ -84,6 +120,11 @@ record PluginSettings(
     private static String value(Properties properties, String key, String fallback) {
         String value = properties.getProperty(key);
         return value == null || value.isBlank() ? fallback : value.trim();
+    }
+
+    private static Set<String> permissionList(Properties properties, String key, String fallback) {
+        Set<String> permissions = split(value(properties, key, fallback), ",", false);
+        return permissions.isEmpty() ? Set.of(fallback) : permissions;
     }
 
     private static String firstNonBlank(String first, String second, String fallback) {

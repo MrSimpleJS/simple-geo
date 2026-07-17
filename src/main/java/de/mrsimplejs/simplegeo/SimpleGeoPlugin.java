@@ -58,20 +58,6 @@ public final class SimpleGeoPlugin {
     private static final String IP2PROXY_DB_FILE = "IP2PROXY-LITE-PX2.CSV";
     private static final long SYNC_NETWORK_BACKOFF_MS = TimeUnit.MINUTES.toMillis(10);
 
-    private static final String PERM_ALLOW = "simplegeo.allow";
-    private static final String PERM_BOT_ALLOW = "simplegeo.botallow";
-    private static final String PERM_NOTIFY = "simplegeo.notify";
-    private static final String PERM_BYPASS = "simplegeo.bypass";
-    private static final String PERM_ANTIBOT_BYPASS = "antibot.bypass";
-    private static final String ADMIN_PERMISSION = "group.admin";
-    private static final String MOD_PERMISSION = "group.mod";
-    private static final String CADMIN_PERMISSION = "group.cadmin";
-
-    private static final String ANSI_RESET = "\u001B[0m";
-    private static final String ANSI_RED = "\u001B[31m";
-    private static final String ANSI_GREEN = "\u001B[32m";
-    private static final String ANSI_YELLOW = "\u001B[33m";
-
     private static final String DEFAULT_MAINTENANCE_ETA = "unknown";
 
 
@@ -87,6 +73,18 @@ public final class SimpleGeoPlugin {
     private final LanguageManager languageManager;
     private boolean ipWhoisEnabled = true;
     private int ipWhoisTimeoutMs;
+    private Set<String> permissionsAllow;
+    private Set<String> permissionsBotAllow;
+    private Set<String> permissionsNotify;
+    private Set<String> permissionsBypass;
+    private Set<String> permissionsAntiBotBypass;
+    private Set<String> permissionsAdmin;
+    private Set<String> permissionsMod;
+    private Set<String> permissionsCadmin;
+    private String ansiReset;
+    private String ansiRed;
+    private String ansiGreen;
+    private String ansiYellow;
 
     private final Set<String> allowedCountries = new HashSet<>();
     private final Set<String> blockedIsps = new HashSet<>();
@@ -124,7 +122,7 @@ public final class SimpleGeoPlugin {
         this.ispLookupService = new IspLookupService(proxy, this, logger);
         this.geoWhitelistRepository = new GeoWhitelistRepository(dataDirectory.resolve(WHITELIST_FILE), propertyStore);
         this.botBanRepository = new BotBanRepository(dataDirectory.resolve(BOTBAN_FILE), propertyStore);
-        this.notificationService = new NotificationService(proxy, languageManager, SimpleGeoPlugin::isStaffNotify);
+        this.notificationService = new NotificationService(proxy, languageManager, this::isStaffNotify);
         this.botBanSyncService = new BotBanSyncService(proxy, this, logger,
             dataDirectory.resolve(BOTBAN_FILE), botBanRepository);
         this.allowedPlayerService = new AllowedPlayerService(dataDirectory.resolve(ALLOWED_PLAYERS_FILE),
@@ -197,6 +195,18 @@ public final class SimpleGeoPlugin {
         ispLookupService.configure(ipWhoisEnabled, ipWhoisTimeoutMs);
         maintenanceEnabled = settings.maintenanceEnabled();
         maintenanceEta = settings.maintenanceEta();
+        permissionsAllow = settings.permissionsAllow();
+        permissionsBotAllow = settings.permissionsBotAllow();
+        permissionsNotify = settings.permissionsNotify();
+        permissionsBypass = settings.permissionsBypass();
+        permissionsAntiBotBypass = settings.permissionsAntiBotBypass();
+        permissionsAdmin = settings.permissionsAdmin();
+        permissionsMod = settings.permissionsMod();
+        permissionsCadmin = settings.permissionsCadmin();
+        ansiReset = settings.ansiReset();
+        ansiRed = settings.ansiRed();
+        ansiGreen = settings.ansiGreen();
+        ansiYellow = settings.ansiYellow();
     }
 
     private String tr(String key, String... replacements) {
@@ -204,7 +214,7 @@ public final class SimpleGeoPlugin {
     }
 
     private boolean checkGeoBlock(Player player) {
-        if (player == null || player.hasPermission(PERM_BYPASS)) {
+        if (player == null || hasAnyPermission(player, permissionsBypass)) {
             return false;
         }
         String ip = resolvePlayerIp(player);
@@ -256,10 +266,11 @@ public final class SimpleGeoPlugin {
         String countryCode = geoIpService.countryCode(ip);
         String countryLabel = countryCode == null || countryCode.isBlank() ? "-" : countryCode;
 
-        logger.info((proxyBlocked ? ANSI_RED : ANSI_GREEN) + "{} ({} / {} / ISP {} - {}) is connecting" + ANSI_RESET,
+        logger.info((proxyBlocked ? ansiRed : ansiGreen) + "{} ({} / {} / ISP {} - {}) is connecting" + ansiReset,
             player.getUsername(), countryLabel, proxyLabel, ispLabel, ip);
 
-        if (!ispBlocked && (player.hasPermission(PERM_ANTIBOT_BYPASS) || player.hasPermission(PERM_BYPASS))) {
+        if (!ispBlocked && (hasAnyPermission(player, permissionsAntiBotBypass)
+            || hasAnyPermission(player, permissionsBypass))) {
             return false;
         }
 
@@ -270,7 +281,7 @@ public final class SimpleGeoPlugin {
 
         if (proxyBlocked) {
             BotBan ban = botBanRepository.create(ip, player.getUsername(), now);
-            logger.info(ANSI_RED + "VPN/proxy block: {} was blocked (IP {}, type {}, ISP {}, CIDR {}, ID {})." + ANSI_RESET,
+            logger.info(ansiRed + "VPN/proxy block: {} was blocked (IP {}, type {}, ISP {}, CIDR {}, ID {})." + ansiReset,
                 player.getUsername(), ip, proxyType == null ? "-" : proxyType, ispLabel, ipRangeBlocked, ban.id());
             notificationService.botBanAttempt(ban, tr("staff.vpn-attempt", "name", player.getUsername())
                 + (proxyType == null || proxyType.isBlank() ? "" : " &8(" + proxyType + ")")
@@ -286,7 +297,8 @@ public final class SimpleGeoPlugin {
         if (player == null) {
             return false;
         }
-        if (player.hasPermission(PERM_ANTIBOT_BYPASS) || player.hasPermission(PERM_BYPASS)) {
+        if (hasAnyPermission(player, permissionsAntiBotBypass)
+            || hasAnyPermission(player, permissionsBypass)) {
             return false;
         }
 
@@ -320,9 +332,7 @@ public final class SimpleGeoPlugin {
         if (!maintenanceEnabled || player == null) {
             return false;
         }
-        if (player.hasPermission(ADMIN_PERMISSION)
-            || player.hasPermission(MOD_PERMISSION)
-            || player.hasPermission(CADMIN_PERMISSION)) {
+        if (isModOrAdmin(player)) {
             return false;
         }
         notificationService.maintenanceAttempt(player.getUsername());
@@ -358,20 +368,21 @@ public final class SimpleGeoPlugin {
         source.sendMessage(LEGACY.deserialize(message));
     }
 
-    private static boolean isModOrAdmin(CommandSource source) {
+    private boolean isModOrAdmin(CommandSource source) {
         if (source instanceof Player player) {
-            return player.hasPermission(ADMIN_PERMISSION)
-                || player.hasPermission(MOD_PERMISSION)
-                || player.hasPermission(CADMIN_PERMISSION);
+            return hasAnyPermission(player, permissionsAdmin)
+                || hasAnyPermission(player, permissionsMod)
+                || hasAnyPermission(player, permissionsCadmin);
         }
         return false;
     }
 
-    private static boolean isStaffNotify(Player player) {
-        return player.hasPermission(PERM_NOTIFY)
-            || player.hasPermission(ADMIN_PERMISSION)
-            || player.hasPermission(MOD_PERMISSION)
-            || player.hasPermission(CADMIN_PERMISSION);
+    private boolean isStaffNotify(Player player) {
+        return hasAnyPermission(player, permissionsNotify) || isModOrAdmin(player);
+    }
+
+    private static boolean hasAnyPermission(CommandSource source, Set<String> permissions) {
+        return permissions.stream().anyMatch(source::hasPermission);
     }
 
     private static boolean isProxyTypeBlocked(String proxyType) {
@@ -408,11 +419,11 @@ public final class SimpleGeoPlugin {
     }
 
     boolean canGeoAllow(CommandSource source) {
-        return source.hasPermission(PERM_ALLOW) || isModOrAdmin(source);
+        return hasAnyPermission(source, permissionsAllow) || isModOrAdmin(source);
     }
 
     boolean canBotAllow(CommandSource source) {
-        return source.hasPermission(PERM_BOT_ALLOW) || isModOrAdmin(source);
+        return hasAnyPermission(source, permissionsBotAllow) || isModOrAdmin(source);
     }
 
     boolean isStaff(CommandSource source) {
